@@ -182,8 +182,9 @@ class HyperMQ extends ReadyResource {
       data: entry.data,
       timestamp: entry.timestamp,
       key: entry.key,
-      ack: orphanAck,
-      concurrent: entry.concurrent || 0
+      consumer: (orphanAck && orphanAck.consumer) || entry.consumer || undefined,
+      concurrent: entry.concurrent || 0,
+      state: entry.state || undefined
     })
 
     w.tryPut(viewKey, record)
@@ -220,7 +221,7 @@ class HyperMQ extends ReadyResource {
       const prev = await view.get(viewKey)
       if (prev) {
         const msg = enc.decodeViewRecord(prev.value)
-        msg.ack = entry.ack
+        msg.consumer = entry.ack.consumer
         w.tryPut(viewKey, enc.encodeViewRecord(msg))
         persisted = true
       }
@@ -307,7 +308,6 @@ class HyperMQ extends ReadyResource {
       data: payload,
       timestamp: Date.now(),
       key,
-      ack: null,
       concurrent
     })
     await this.autobee.append(buf)
@@ -574,7 +574,7 @@ class HyperMQ extends ReadyResource {
 
   _appendAck (key) {
     if (!this.writable) return
-    const buf = enc.encodeAck(key, { consumer: this._publicKey })
+    const buf = enc.encodeAck(key, this._publicKey)
     this.autobee.append(buf).catch((err) => {
       this._emitWarning(new Error('Failed to append ack', { cause: err }))
     })

@@ -1,6 +1,6 @@
 {
   "name": "hypermq",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "simple MQ backed by autobee",
   "homepage": "https://github.com/chetasr/hypermq#readme",
@@ -21,11 +21,8 @@
     "spec/hyperschema/"
   ],
   "scripts": {
-    "pretest": "npm run build",
     "test": "brittle test/*.js",
-    "build": "node build.js",
-    "prepack": "npm run build",
-    "prepublishOnly": "npm run build"
+    "build:schema": "node build.js"
   },
   "dependencies": {
     "autobee": "git+https://github.com/holepunchto/autobee.git",
