@@ -81,9 +81,18 @@ The callback receives a message object:
   topic,      // string
   data,       // Buffer
   key,        // Buffer (32 bytes)
-  concurrent  // number
+  concurrent, // number
+  setStatus   // function (see below)
 }
 ```
+
+#### `msg.setStatus(status)`
+
+Every message object includes a `setStatus` helper. Calling it appends a status update for the message to the replicated log. The status is persisted in the view and propagated to all peers reactively.
+
+- `status` - Buffer, string, or JSON-serializable value
+
+Only has effect when the instance is writable. Last write wins in the view.
 
 For work queue messages (`concurrent > 0`), the ack is sent in parallel to the callback execution.
 
@@ -108,6 +117,17 @@ Authorize a remote peer to write to the queue.
 ### `await mq.removeWriter(key)`
 
 Revoke write access for a peer.
+
+### `mq.onStatus(key?, callback)`
+
+Subscribe to status updates. The callback is invoked whenever a status update is applied (locally or via replication).
+
+- `key` - optional 32-byte Buffer or hex string. If provided, only status updates for that message trigger the callback. If omitted, all status updates trigger it.
+- `callback(key, status)` - `key` is the 32-byte message Buffer, `status` is a Buffer.
+
+### `mq.offStatus(key?, callback?)`
+
+Remove a status subscription. If `key` is omitted, removes from the wildcard set. If `callback` is also omitted, removes all subscriptions for that key (or all wildcard subscriptions).
 
 ### `await mq.flush()`
 
@@ -164,6 +184,36 @@ const key = await mq.publish('jobs', 'resize-image-42', { concurrent: 1 })
 const ack = await mq.waitAck(key)
 console.log('Processed by:', b4a.toString(ack.consumer, 'hex'))
 ```
+
+### Job Status Updates
+
+Any subscriber (pub/sub or work queue) can update the status of a message by calling `msg.setStatus(status)`. Status updates are appended to the replicated log, persisted in the view, and propagated to all peers reactively -- no polling required.
+
+Producers (or any peer) can subscribe to status changes with `mq.onStatus()`:
+
+```js
+// Consumer reports progress
+consumer.subscribe('jobs', async (msg) => {
+  msg.setStatus({ status: 'running', progress: 0 })
+  await doWork()
+  msg.setStatus({ status: 'running', progress: 50 })
+  await doMoreWork()
+  msg.setStatus({ status: 'done', progress: 100 })
+})
+
+// Producer subscribes to a specific job's status
+const key = await producer.publish('jobs', 'resize-image', { concurrent: 1 })
+producer.onStatus(key, (k, state) => {
+  console.log('Status:', JSON.parse(b4a.toString(state)))
+})
+
+// Or subscribe to all status updates
+producer.onStatus((key, state) => {
+  console.log('Any status:', JSON.parse(b4a.toString(state)))
+})
+```
+
+See `examples/job-status.js` for a full working example.
 
 ## Data Types
 

@@ -53,6 +53,9 @@ class HyperMQ extends ReadyResource {
     this._deferred = new Map()
     this._registered = false
 
+    this._statusSubs = new Map()
+    this._statusSubsWildcard = new Set()
+
     this.autobee = new Autobee(corestore, key, {
       apply: this._apply.bind(this),
       ...opts
@@ -116,6 +119,8 @@ class HyperMQ extends ReadyResource {
     this._msgAckCount.clear()
     this._deferred.clear()
     this._busy = 0
+    this._statusSubs.clear()
+    this._statusSubsWildcard.clear()
 
     await this.autobee.close()
   }
@@ -150,6 +155,9 @@ class HyperMQ extends ReadyResource {
           break
         case enc.TYPE_REGISTER_CONSUMER:
           this._applyRegisterConsumer(entry)
+          break
+        case enc.TYPE_STATUS_UPDATE:
+          await this._applyStatusUpdate(entry, view, w)
           break
       }
     }
@@ -243,6 +251,26 @@ class HyperMQ extends ReadyResource {
     this._evaluateClaims(hex)
 
     this._resolveAcks(entry.key, entry.ack)
+  }
+
+  async _applyStatusUpdate (entry, view, w) {
+    const hex = this._keyHex(entry.key, 'status entry')
+    if (hex === null) return
+
+    const viewKey = this._viewKey(entry.key)
+
+    try {
+      const prev = await view.get(viewKey)
+      if (prev) {
+        const msg = enc.decodeViewRecord(prev.value)
+        msg.state = entry.state
+        w.tryPut(viewKey, enc.encodeViewRecord(msg))
+      }
+    } catch (err) {
+      this._emitWarning(new Error('Failed to persist status view record update', { cause: err }))
+    }
+
+    this._notifyStatusSubscribers(entry.key, entry.state)
   }
 
   _scheduleDelivery () {
@@ -386,6 +414,76 @@ class HyperMQ extends ReadyResource {
     if (!this.opened) await this.ready()
     if (typeof key === 'string') key = ID.decode(key)
     await this.autobee.append(enc.encodeRemoveWriter(key))
+  }
+
+  onStatus (key, cb) {
+    if (typeof key === 'function') {
+      cb = key
+      key = null
+    }
+    if (typeof cb !== 'function') throw new TypeError('callback must be a function')
+    if (key) {
+      if (typeof key === 'string') key = Buffer.from(key, 'hex')
+      const hex = b4a.toString(key, 'hex')
+      let set = this._statusSubs.get(hex)
+      if (!set) {
+        set = new Set()
+        this._statusSubs.set(hex, set)
+      }
+      set.add(cb)
+    } else {
+      this._statusSubsWildcard.add(cb)
+    }
+  }
+
+  offStatus (key, cb) {
+    if (typeof key === 'function') {
+      cb = key
+      key = null
+    }
+    if (key) {
+      if (typeof key === 'string') key = Buffer.from(key, 'hex')
+      const hex = b4a.toString(key, 'hex')
+      const set = this._statusSubs.get(hex)
+      if (set) {
+        if (cb) {
+          set.delete(cb)
+          if (set.size === 0) this._statusSubs.delete(hex)
+        } else {
+          this._statusSubs.delete(hex)
+        }
+      }
+    } else if (cb) {
+      this._statusSubsWildcard.delete(cb)
+    } else {
+      this._statusSubsWildcard.clear()
+    }
+  }
+
+  _appendStatusUpdate (key, status) {
+    if (!this.writable) return
+    const state = enc.toBuffer(status)
+    const buf = enc.encodeStatusUpdate(key, state)
+    this.autobee.append(buf).catch((err) => {
+      this._emitWarning(new Error('Failed to append status update', { cause: err }))
+    })
+  }
+
+  _notifyStatusSubscribers (key, state) {
+    const hex = b4a.toString(key, 'hex')
+    const keyed = this._statusSubs.get(hex)
+    if (keyed) {
+      for (const cb of keyed) {
+        try { cb(key, state) } catch (err) {
+          this._emitWarning(new Error('Status subscriber callback threw', { cause: err }))
+        }
+      }
+    }
+    for (const cb of this._statusSubsWildcard) {
+      try { cb(key, state) } catch (err) {
+        this._emitWarning(new Error('Status subscriber callback threw', { cause: err }))
+      }
+    }
   }
 
   _applyRegisterConsumer (entry) {
@@ -555,6 +653,7 @@ class HyperMQ extends ReadyResource {
   }
 
   _invokeSubscribers (subs, msg) {
+    msg.setStatus = (status) => { this._appendStatusUpdate(msg.key, status) }
     const promises = []
     for (const cb of subs) {
       try {
