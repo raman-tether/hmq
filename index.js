@@ -83,6 +83,7 @@ class HyperMQ extends ReadyResource {
 
     this._discovery = this.swarm.join(this.discoveryKey)
     await this._discovery.flushed()
+    await this.autobee.flush()
 
     if (!this._producer && !this._registered) {
       if (!this.writable) {
@@ -461,7 +462,10 @@ class HyperMQ extends ReadyResource {
   }
 
   _appendStatusUpdate (key, status) {
-    if (!this.writable) return
+    if (!this.writable) {
+      this._emitWarning(new Error('Status update dropped: not writable'))
+      return
+    }
     const state = enc.toBuffer(status)
     const buf = enc.encodeStatusUpdate(key, state)
     this.autobee.append(buf).catch((err) => {
@@ -672,7 +676,10 @@ class HyperMQ extends ReadyResource {
   }
 
   _appendAck (key) {
-    if (!this.writable) return
+    if (!this.writable) {
+      this._emitWarning(new Error('Ack dropped: not writable'))
+      return
+    }
     const buf = enc.encodeAck(key, this._publicKey)
     this.autobee.append(buf).catch((err) => {
       this._emitWarning(new Error('Failed to append ack', { cause: err }))
