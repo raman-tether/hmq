@@ -35,6 +35,7 @@ const main = async () => {
       await new Promise(resolve => setTimeout(resolve, 5000))
       console.log(`[Consumer ${i + 1}] Finished:   ${task}`)
     })
+    c.drainConcurrentPending()
   })
 
   const tasks = [

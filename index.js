@@ -52,6 +52,7 @@ class HyperMQ extends ReadyResource {
     this._pendingClaims = new Map()
     this._deferred = new Map()
     this._registered = false
+    this._drainingConcurrent = false
 
     this._statusSubs = new Map()
     this._statusSubsWildcard = new Set()
@@ -69,12 +70,19 @@ class HyperMQ extends ReadyResource {
   }
 
   async _open () {
+    if (this._keyPair) {
+      this._publicKey = this._keyPair.publicKey
+      this._publicKeyHex = b4a.toString(this._publicKey, 'hex')
+      this._consumers.set(this._publicKeyHex, this._publicKey)
+    }
+
     await this.autobee.ready()
 
     this.key = this.autobee.key
     this.discoveryKey = this.autobee.discoveryKey
     this._publicKey = this._keyPair ? this._keyPair.publicKey : this.autobee.local.key
     this._publicKeyHex = b4a.toString(this._publicKey, 'hex')
+    this._consumers.set(this._publicKeyHex, this._publicKey)
 
     this.swarm.on('connection', (conn) => {
       this.corestore.replicate(conn)
@@ -85,7 +93,7 @@ class HyperMQ extends ReadyResource {
     await this._discovery.flushed()
     await this.autobee.flush()
 
-    if (!this._producer && !this._registered) {
+    if (!this._registered) {
       if (!this.writable) {
         await new Promise(resolve => this.autobee.once('writable', resolve))
       }
@@ -201,7 +209,7 @@ class HyperMQ extends ReadyResource {
     const concurrent = entry.concurrent || 0
     const msg = { topic: entry.topic, data: entry.data, key: entry.key, concurrent }
 
-    if (concurrent > 0 && !this._producer) {
+    if (concurrent > 0) {
       this._handleWorkQueueMessage(msg)
       return
     }
@@ -295,7 +303,12 @@ class HyperMQ extends ReadyResource {
         this._pending = []
 
         for (const msg of batch) {
-          if (this.writable && !(msg.concurrent > 0)) {
+          if (msg.concurrent > 0) {
+            this._enqueueConcurrentPending(msg)
+            continue
+          }
+
+          if (this.writable) {
             this._appendAck(msg.key)
           }
 
@@ -512,14 +525,70 @@ class HyperMQ extends ReadyResource {
     this._evaluateClaims(hex)
   }
 
-  _handleWorkQueueMessage (msg) {
-    if (this._producer) return
-
+  _enqueueConcurrentPending (msg) {
     const hex = this._keyHex(msg.key)
     if (hex === null) return
 
+    const ackCount = this._msgAckCount.get(hex) || 0
+    if (ackCount >= msg.concurrent) return
+
+    for (const pending of this._pending) {
+      if (b4a.toString(pending.key, 'hex') === hex) return
+    }
+    if (this._pendingClaims.has(hex) || this._deferred.has(hex)) return
+
+    this._pending.push(msg)
+  }
+
+  drainConcurrentPending () {
+    if (this._drainingConcurrent) return
+    this._drainingConcurrent = true
+
+    try {
+      const batch = this._pending.filter(msg => msg.concurrent > 0)
+      this._pending = this._pending.filter(msg => msg.concurrent === 0)
+      if (batch.length === 0) {
+        if (this._pending.length > 0) this._scheduleDelivery()
+        return
+      }
+
+      let requeued = false
+      for (const msg of batch) {
+        const before = this._pending.length
+        this._handleWorkQueueMessage(msg)
+        if (this._pending.length > before) requeued = true
+      }
+
+      if (this._pending.some(m => m.concurrent > 0)) {
+        setImmediate(() => this.drainConcurrentPending())
+      } else if (this._pending.length > 0) {
+        this._scheduleDelivery()
+      }
+    } finally {
+      this._drainingConcurrent = false
+    }
+  }
+
+  _closerConsumersRejected (hex, closerConsumers) {
+    const rejSet = this._msgRejections.get(hex)
+    if (!rejSet) return false
+    return closerConsumers.every((c) => rejSet.has(c))
+  }
+
+  _handleWorkQueueMessage (msg) {
+    const hex = this._keyHex(msg.key)
+    if (hex === null) return
+
+    const ackCount = this._msgAckCount.get(hex) || 0
+    if (ackCount >= msg.concurrent) return
+
     const subs = this._subs.get(msg.topic)
-    if (!subs || subs.size === 0) return
+    const hasSubs = subs && subs.size > 0
+
+    if (!this._producer && !hasSubs) {
+      this._enqueueConcurrentPending(msg)
+      return
+    }
 
     if (this._busy > 0) {
       this._rejectAndDefer(hex, msg)
@@ -529,7 +598,15 @@ class HyperMQ extends ReadyResource {
     const sorted = sortByDistance(this._consumers, msg.key)
     const myIndex = sorted.findIndex((e) => e.hex === this._publicKeyHex)
 
-    if (myIndex < 0) return
+    if (myIndex < 0) {
+      this._enqueueConcurrentPending(msg)
+      return
+    }
+
+    if (this._producer) {
+      this._rejectAndDefer(hex, msg)
+      return
+    }
 
     if (myIndex === 0) {
       this._processClaim(hex, msg)
@@ -537,6 +614,13 @@ class HyperMQ extends ReadyResource {
     }
 
     const closerConsumers = sorted.slice(0, myIndex).map((e) => e.hex)
+    if (this._closerConsumersRejected(hex, closerConsumers)) {
+      this._processClaim(hex, msg)
+      return
+    }
+
+    if (this._pendingClaims.has(hex)) return
+
     const timer = setTimeout(() => {
       this._onClaimTimeout(hex)
     }, myIndex * this._timeout)
@@ -595,6 +679,11 @@ class HyperMQ extends ReadyResource {
   _processClaim (hex, msg) {
     const ackCount = this._msgAckCount.get(hex) || 0
     if (ackCount >= msg.concurrent) return
+
+    if (this._producer) {
+      this._rejectAndDefer(hex, msg)
+      return
+    }
 
     if (this._busy > 0) {
       this._rejectAndDefer(hex, msg)
