@@ -545,8 +545,16 @@ class HyperMQ extends ReadyResource {
     this._drainingConcurrent = true
 
     try {
-      const batch = this._pending.filter(msg => msg.concurrent > 0)
-      this._pending = this._pending.filter(msg => msg.concurrent === 0)
+    const batch = []
+    const nonConcurrent = []
+    for (const msg of this._pending) {
+      if (msg.concurrent > 0) {
+        batch.push(msg)
+      } else {
+        nonConcurrent.push(msg)
+      }
+    }
+    this._pending = nonConcurrent
       if (batch.length === 0) {
         if (this._pending.length > 0) this._scheduleDelivery()
         return
