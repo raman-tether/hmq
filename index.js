@@ -40,6 +40,7 @@ class HyperMQ extends ReadyResource {
     this._orphans = new Map()
     this._maxOrphans = opts.maxOrphanAcks || 10000
     this._pending = []
+    this._pendingKeySet = new Set()
     this._scheduled = false
     this._processing = false
     this._discovery = null
@@ -70,11 +71,6 @@ class HyperMQ extends ReadyResource {
   }
 
   async _open () {
-    if (this._keyPair) {
-      this._publicKey = this._keyPair.publicKey
-      this._publicKeyHex = b4a.toString(this._publicKey, 'hex')
-      this._consumers.set(this._publicKeyHex, this._publicKey)
-    }
 
     await this.autobee.ready()
 
@@ -111,6 +107,7 @@ class HyperMQ extends ReadyResource {
     if (this._ownSwarm) await this.swarm.destroy()
     this._subs.clear()
     this._pending.length = 0
+    this._pendingKeySet.clear()
     this._scheduled = false
     this._processing = false
     this._orphans.clear()
@@ -222,6 +219,7 @@ class HyperMQ extends ReadyResource {
         this._invokeSubscribers(subs, msg)
       } else {
         this._pending.push(msg)
+        this._pendingKeySet.add(hex)
         this._scheduleDelivery()
       }
     }
@@ -301,6 +299,7 @@ class HyperMQ extends ReadyResource {
       while (this._pending.length > 0) {
         const batch = this._pending
         this._pending = []
+        this._pendingKeySet.clear()
 
         for (const msg of batch) {
           if (msg.concurrent > 0) {
@@ -532,12 +531,10 @@ class HyperMQ extends ReadyResource {
     const ackCount = this._msgAckCount.get(hex) || 0
     if (ackCount >= msg.concurrent) return
 
-    for (const pending of this._pending) {
-      if (b4a.toString(pending.key, 'hex') === hex) return
-    }
-    if (this._pendingClaims.has(hex) || this._deferred.has(hex)) return
+    if (this._pendingKeySet.has(hex) || this._pendingClaims.has(hex) || this._deferred.has(hex)) return
 
     this._pending.push(msg)
+    this._pendingKeySet.add(hex)
   }
 
   drainConcurrentPending () {
@@ -555,6 +552,11 @@ class HyperMQ extends ReadyResource {
       }
     }
     this._pending = nonConcurrent
+    this._pendingKeySet.clear()
+    for (const msg of nonConcurrent) {
+      const keyHex = this._keyHex(msg.key)
+      if (keyHex !== null) this._pendingKeySet.add(keyHex)
+    }
       if (batch.length === 0) {
         if (this._pending.length > 0) this._scheduleDelivery()
         return
