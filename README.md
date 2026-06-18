@@ -100,6 +100,10 @@ For work queue messages (`concurrent > 0`), the ack is sent in parallel to the c
 
 Remove a subscription. If `callback` is omitted, all subscribers for the topic are removed.
 
+### `mq.drainConcurrentPending()`
+
+Process work-queue messages (`concurrent > 0`) that were buffered in `_pending` during log replay (for example because `subscribe()` was called after `ready()`). Call after `subscribe()` on a consumer. Pub/sub messages left in `_pending` are scheduled via the normal delivery path.
+
 ### `const ack = await mq.waitAck(key?)`
 
 Wait for an acknowledgment.
