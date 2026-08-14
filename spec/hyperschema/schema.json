@@ -3,7 +3,7 @@
   "schema": [
     {
       "name": "message",
-      "namespace": "hypermq",
+      "namespace": "hmq",
       "compact": false,
       "flagsPosition": 4,
       "fields": [
@@ -50,7 +50,7 @@
     },
     {
       "name": "action",
-      "namespace": "hypermq",
+      "namespace": "hmq",
       "compact": true,
       "flagsPosition": -1,
       "fields": [
@@ -70,7 +70,7 @@
     },
     {
       "name": "register",
-      "namespace": "hypermq",
+      "namespace": "hmq",
       "compact": true,
       "flagsPosition": 1,
       "fields": [
