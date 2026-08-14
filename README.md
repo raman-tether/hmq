@@ -1,13 +1,13 @@
-# HyperMQ
+# hmq
 
 Simple message queue backed by [Autobee](https://github.com/holepunchto/autobee).
 
-HyperMQ is a peer-to-peer message queue that uses [Hyperswarm](https://github.com/holepunchto/hyperswarm) for discovery and Autobee for persistent, replicated storage. It supports **pub/sub** (fan-out) and **work queue** (competing consumer) messaging patterns.
+`hmq` is a peer-to-peer message queue that uses [Hyperswarm](https://github.com/holepunchto/hyperswarm) for discovery and Autobee for persistent, replicated storage. It supports **pub/sub** (fan-out) and **work queue** (competing consumer) messaging patterns.
 
 ## Install
 
 ```
-npm install hypermq
+npm install hmq
 ```
 
 You will also need [corestore](https://github.com/holepunchto/corestore) for storage:
@@ -20,7 +20,7 @@ npm install corestore
 
 ```js
 const Corestore = require('corestore')
-const HyperMQ = require('hypermq')
+const HyperMQ = require('hmq')
 const b4a = require('b4a')
 
 const store = new Corestore('./my-storage')
