@@ -398,7 +398,7 @@ class HyperMQ extends ReadyResource {
     let req
 
     const handshake = mux.createChannel({
-      protocol: '@hypermq/handshake',
+      protocol: '@hmq/handshake',
       id: b4a.from('hmq!handshake'),
       onopen: () => { if (!this.writable) req.send(this._publicKey) },
       onclose: () => {}

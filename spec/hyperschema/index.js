@@ -11,7 +11,7 @@ const VERSION = 1
 // eslint-disable-next-line no-unused-vars
 let version = VERSION
 
-// @hypermq/message
+// @hmq/message
 const encoding0 = {
   preencode(state, m) {
     c.string.preencode(state, m.topic)
@@ -56,7 +56,7 @@ const encoding0 = {
   }
 }
 
-// @hypermq/action
+// @hmq/action
 const encoding1 = {
   preencode(state, m) {
     c.fixed32.preencode(state, m.key)
@@ -77,7 +77,7 @@ const encoding1 = {
   }
 }
 
-// @hypermq/register
+// @hmq/register
 const encoding2 = {
   preencode(state, m) {
     c.fixed32.preencode(state, m.key)
@@ -123,11 +123,11 @@ function getEnum(name) {
 
 function getEncoding(name) {
   switch (name) {
-    case '@hypermq/message':
+    case '@hmq/message':
       return encoding0
-    case '@hypermq/action':
+    case '@hmq/action':
       return encoding1
-    case '@hypermq/register':
+    case '@hmq/register':
       return encoding2
     default:
       throw new Error('Encoder not found ' + name)

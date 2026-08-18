@@ -3,7 +3,7 @@
 const Hyperschema = require('hyperschema')
 
 const schema = Hyperschema.from('./spec/hyperschema')
-const mq = schema.namespace('hypermq')
+const mq = schema.namespace('hmq')
 
 mq.register({
   name: 'message',
