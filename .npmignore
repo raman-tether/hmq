@@ -3,3 +3,5 @@ examples/
 reference/
 build.js
 spec/hyperschema/*.schema
+node_modules
+.github
