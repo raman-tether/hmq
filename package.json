@@ -1,7 +1,7 @@
 {
   "name": "hmq",
   "version": "2.0.1",
-  "private": true,
+  "private": false,
   "description": "simple MQ backed by autobee",
   "homepage": "https://github.com/tetherto/hmq#readme",
   "bugs": {
@@ -41,5 +41,9 @@
     "brittle": "^3.7.0",
     "corestore": "^7.11.0",
     "test-tmp": "^1.4.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }
