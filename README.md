@@ -7,7 +7,7 @@ Simple message queue backed by [Autobee](https://github.com/holepunchto/autobee)
 ## Install
 
 ```
-npm install hmq
+npm install @tetherto/hmq
 ```
 
 You will also need [corestore](https://github.com/holepunchto/corestore) for storage:
@@ -20,7 +20,7 @@ npm install corestore
 
 ```js
 const Corestore = require('corestore')
-const HyperMQ = require('hmq')
+const HyperMQ = require('@tetherto/hmq')
 const b4a = require('b4a')
 
 const store = new Corestore('./my-storage')
